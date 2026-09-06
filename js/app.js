@@ -14,6 +14,14 @@ let sortOrder = 'createdAt';
 let isSigningUp = false;
 let currentCategoryFilter = null; 
 
+// 🌟 데이터베이스의 과거 '1주차' 기록을 'Week 1'로 실시간 번역해주는 함수
+function normalizeCategory(cat) {
+    if (!cat) return 'All';
+    if (cat === '전체' || cat === 'All') return 'All';
+    if (cat.includes('주차')) return 'Week ' + cat.replace('주차', '').trim();
+    return cat;
+}
+
 const translations = {
     ko: {
         select_section: "분반을 선택하세요 (Select your section)",
@@ -36,6 +44,7 @@ const translations = {
         login_link: "로그인",
         admin_dash: "관리자 대시보드",
         logout_btn: "로그아웃",
+        refresh_btn: "새로고침",
         sort_new: "최신순",
         sort_vote: "추천순",
         ask_btn: "+ 질문하기",
@@ -80,6 +89,7 @@ const translations = {
         login_link: "Login",
         admin_dash: "Admin Dashboard",
         logout_btn: "Logout",
+        refresh_btn: "Refresh",
         sort_new: "Newest",
         sort_vote: "Most Upvoted",
         ask_btn: "+ Ask Question",
@@ -105,7 +115,6 @@ const translations = {
     }
 };
 
-// 1. 한국어/영어 분반 상관없이 무조건 영어(All, Week 1~)로 카테고리 생성
 function populateCategories() {
     const catSelect = document.getElementById('q-category');
     if (!catSelect) return;
@@ -125,6 +134,31 @@ function populateCategories() {
     }
 }
 
+// 🌟 화면 상단에 1~16주차 필터 버튼들을 그려주는 함수
+function renderFilterBar() {
+    const container = document.getElementById('filter-buttons');
+    if (!container) return; // HTML에 영역이 없으면 무시
+    
+    container.innerHTML = '';
+    
+    const cats = ['All'];
+    for(let i=1; i<=16; i++) cats.push(`Week ${i}`);
+
+    cats.forEach(cat => {
+        const isActive = (currentCategoryFilter || 'All') === cat;
+        const btn = document.createElement('button');
+        btn.innerText = cat;
+        
+        // 클릭된 버튼은 진한 파란색으로, 나머지는 연한 회색으로 표시
+        btn.className = isActive 
+            ? 'px-4 py-1.5 bg-indigo-600 text-white text-sm font-bold rounded-full shadow-md transition' 
+            : 'px-4 py-1.5 bg-white border border-gray-300 text-gray-600 hover:text-indigo-600 text-sm font-medium rounded-full hover:bg-indigo-50 transition shadow-sm';
+        
+        btn.onclick = () => filterByCategory(cat);
+        container.appendChild(btn);
+    });
+}
+
 function updateLanguage(lang) {
     document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
@@ -134,16 +168,19 @@ function updateLanguage(lang) {
         const key = el.getAttribute('data-i18n-placeholder');
         if (translations[lang][key]) el.placeholder = translations[lang][key];
     });
-    populateCategories(); // 언어에 상관없이 무조건 영문으로 생성
+    populateCategories(); 
 }
 
 window.filterByCategory = (category) => {
-    // 기존에 '전체'로 쓰였던 글이 있을 수 있어 호환성을 위해 둘 다 남겨둡니다.
-    if (category === '전체' || category === 'All') {
+    if (category === 'All') {
         currentCategoryFilter = null;
     } else {
         currentCategoryFilter = category;
     }
+    loadQuestions();
+};
+
+window.refreshData = () => {
     loadQuestions();
 };
 
@@ -284,6 +321,7 @@ window.setSort = (order) => {
 };
 
 async function loadQuestions() {
+    renderFilterBar(); // 질문을 불러올 때 필터 버튼 영역도 새롭게 칠해줍니다.
     const qList = document.getElementById('question-list');
     const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
     qList.innerHTML = `<p class="text-center text-gray-500">${translations[lang].loading_q}</p>`;
@@ -298,27 +336,17 @@ async function loadQuestions() {
             return;
         }
 
-        if (currentCategoryFilter) {
-            const filterAlert = document.createElement('div');
-            filterAlert.className = "flex justify-between items-center p-4 bg-indigo-50 text-indigo-800 rounded-xl border border-indigo-200 shadow-sm mb-4";
-            filterAlert.innerHTML = `
-                <span class="text-sm">
-                    <i class="fa-solid fa-filter mr-2"></i> <strong>${currentCategoryFilter}</strong> ${lang === 'ko' ? '질문만 모아보는 중입니다.' : 'questions filtered.'}
-                </span>
-                <button onclick="filterByCategory('All')" class="text-xs px-3 py-1 bg-white text-indigo-600 border border-indigo-200 rounded-md hover:bg-indigo-100 transition shadow-sm">
-                    ${lang === 'ko' ? '전체 보기' : 'Show All'}
-                </button>
-            `;
-            qList.appendChild(filterAlert);
-        }
-
         let hasVisibleQuestions = false;
 
         snapshot.forEach((docSnap) => {
             const q = docSnap.data();
             const id = docSnap.id;
+            
+            // 🌟 1주차 -> Week 1 로 강제 번역
+            const normCat = normalizeCategory(q.category);
 
-            if (currentCategoryFilter && q.category !== currentCategoryFilter) {
+            // 필터링 적용 (현재 선택된 필터가 있고, 번역된 카테고리와 다르면 건너뜀)
+            if (currentCategoryFilter && normCat !== currentCategoryFilter) {
                 return; 
             }
             
@@ -331,12 +359,12 @@ async function loadQuestions() {
             card.innerHTML = `
                 <div class="flex justify-between items-start mb-3">
                     <div>
-                        <span onclick="filterByCategory('${q.category}')" class="cursor-pointer text-xs font-bold px-2 py-1 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-200 transition" title="${lang === 'ko' ? '클릭하여 이 주차만 모아보기' : 'Click to filter by this week'}">${q.category}</span>
+                        <span onclick="filterByCategory('${normCat}')" class="cursor-pointer text-xs font-bold px-2 py-1 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-200 transition" title="${lang === 'ko' ? '클릭하여 이 주차만 모아보기' : 'Click to filter by this week'}">${normCat}</span>
                         <h3 class="text-xl font-bold mt-2">${q.title}</h3>
                         <p class="text-sm text-gray-400">${q.authorName}(${q.authorStudentId}) | ${q.createdAt?.toDate().toLocaleString() || 'Just now'}</p>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="upvote('questions', '${id}', ${hasUpvoted})" class="p-2 rounded-lg ${hasUpvoted ? 'bg-orange-100 text-orange-600' : 'bg-gray-100'} transition">
+                        <button id="upvote-q-${id}" onclick="upvote('questions', '${id}', ${hasUpvoted})" class="p-2 rounded-lg ${hasUpvoted ? 'bg-orange-100 text-orange-600' : 'bg-gray-100'} transition">
                             <i class="fa-solid fa-thumbs-up"></i> <span class="font-bold">${q.upvotesCount}</span>
                         </button>
                         ${isOwnerOrAdmin ? `<button onclick="deleteItem('questions', '${id}')" class="p-2 text-gray-400 hover:text-red-500 transition"><i class="fa-solid fa-trash"></i></button>` : ''}
@@ -363,7 +391,6 @@ async function loadQuestions() {
         }
 
     } catch (e) {
-        // 색인(Index) 에러 발생 시 클릭 가능한 파란색 링크 생성
         let errorHtml = e.message;
         const linkMatch = e.message.match(/https:\/\/[^\s]+/);
         if (linkMatch) {
@@ -390,8 +417,8 @@ async function loadAnswers(questionId) {
                 <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg text-sm">
                     <div><span class="font-bold">${a.authorName}(${a.authorStudentId})</span>: ${a.content}</div>
                     <div class="flex gap-2 items-center">
-                        <button onclick="upvote('answers', '${id}', ${hasUpvoted})" class="text-xs ${hasUpvoted ? 'text-orange-600' : 'text-gray-400'}">
-                            <i class="fa-solid fa-thumbs-up"></i> ${a.upvotesCount}
+                        <button id="upvote-a-${id}" onclick="upvote('answers', '${id}', ${hasUpvoted})" class="text-xs ${hasUpvoted ? 'text-orange-600' : 'text-gray-400'}">
+                            <i class="fa-solid fa-thumbs-up"></i> <span>${a.upvotesCount}</span>
                         </button>
                         ${isOwnerOrAdmin ? `<button onclick="deleteItem('answers', '${id}')" class="text-xs text-gray-300 hover:text-red-500"><i class="fa-solid fa-xmark"></i></button>` : ''}
                     </div>
@@ -399,7 +426,6 @@ async function loadAnswers(questionId) {
             `;
         });
     } catch (e) {
-        // 답변 불러오기 실패 시(색인 필요) 각 답변 칸에 클릭 가능한 링크 제공
         const linkMatch = e.message.match(/https:\/\/[^\s]+/);
         if (linkMatch) {
             ansDiv.innerHTML = `<p class="text-xs text-red-500 p-2 bg-red-50 rounded">답변 색인 생성 필요: <a href="${linkMatch[0]}" target="_blank" class="text-blue-600 underline font-bold">여기를 클릭하세요</a></p>`;
@@ -408,6 +434,56 @@ async function loadAnswers(questionId) {
         }
     }
 }
+
+window.submitQuestion = async () => {
+    const category = document.getElementById('q-category').value;
+    const title = document.getElementById('q-title').value;
+    const content = document.getElementById('q-content').value;
+    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
+
+    if (!title.trim() || !content.trim()) {
+        alert(lang === 'ko' ? '제목과 내용을 모두 입력해주세요.' : 'Please enter both title and content.');
+        return;
+    }
+    
+    const submitBtn = document.querySelector('button[onclick="submitQuestion()"]');
+    if (submitBtn) {
+        submitBtn.innerText = lang === 'ko' ? '처리 중...' : 'Processing...';
+        submitBtn.disabled = true;
+    }
+
+    try {
+        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+        const { name, studentId } = userDoc.data();
+
+        await addDoc(collection(db, "questions"), {
+            section: currentSection,
+            category: category,
+            title: title,
+            content: content,
+            uid: currentUser.uid,
+            authorName: name,
+            authorStudentId: studentId,
+            upvotesCount: 0,
+            upvotedBy: [],
+            createdAt: serverTimestamp()
+        });
+
+        document.getElementById('q-title').value = '';
+        document.getElementById('q-content').value = '';
+        
+        closeModal('modal-question');
+        loadQuestions(); 
+    } catch (e) {
+        console.error(e);
+        alert("등록에 실패했습니다: " + e.message);
+    } finally {
+        if (submitBtn) {
+            submitBtn.innerText = lang === 'ko' ? '등록하기' : 'Submit';
+            submitBtn.disabled = false;
+        }
+    }
+};
 
 window.submitAnswer = async (questionId) => {
     const content = document.getElementById(`ans-input-${questionId}`).value;
@@ -461,18 +537,47 @@ window.openModal = (id) => {
 
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
 
-async function handleUpvote(col, id, hasUpvoted) {
-    const ref = doc(db, col, id);
-    const snap = await getDoc(ref);
-    const data = snap.data();
-    const newCount = hasUpvoted ? (data.upvotesCount || 1) - 1 : (data.upvotesCount || 0) + 1;
-    await updateDoc(ref, {
-        upvotesCount: Math.max(0, newCount),
-        upvotedBy: hasUpvoted ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid)
-    });
-    col === 'questions' ? loadQuestions() : loadAnswers(id.split('-')[0]);
-}
-window.upvote = handleUpvote;
+window.upvote = async (col, id, hasUpvoted) => {
+    const btnId = col === 'questions' ? `upvote-q-${id}` : `upvote-a-${id}`;
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    
+    const span = btn.querySelector('span');
+    let count = parseInt(span.innerText);
+    
+    if (hasUpvoted) {
+        count = Math.max(0, count - 1);
+        span.innerText = count;
+        btn.setAttribute('onclick', `upvote('${col}', '${id}', false)`);
+        if (col === 'questions') {
+            btn.className = "p-2 rounded-lg bg-gray-100 transition";
+        } else {
+            btn.className = "text-xs text-gray-400";
+        }
+    } else {
+        count = count + 1;
+        span.innerText = count;
+        btn.setAttribute('onclick', `upvote('${col}', '${id}', true)`);
+        if (col === 'questions') {
+            btn.className = "p-2 rounded-lg bg-orange-100 text-orange-600 transition";
+        } else {
+            btn.className = "text-xs text-orange-600";
+        }
+    }
+
+    try {
+        const ref = doc(db, col, id);
+        const snap = await getDoc(ref);
+        const data = snap.data();
+        const newCount = hasUpvoted ? Math.max(0, (data.upvotesCount || 1) - 1) : (data.upvotesCount || 0) + 1;
+        await updateDoc(ref, {
+            upvotesCount: newCount,
+            upvotedBy: hasUpvoted ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid)
+        });
+    } catch(e) {
+        console.error("Upvote error:", e);
+    }
+};
 
 window.goBackToSections = () => {
     currentSection = null;

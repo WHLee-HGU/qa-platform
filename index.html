@@ -62,6 +62,9 @@
             </div>
             <div class="flex gap-2">
                 <button id="btn-admin-dash" onclick="showAdminDashboard()" data-i18n="admin_dash" class="hidden p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition">관리자 대시보드</button>
+                <!-- ⬇️ 새로 추가된 버튼 ⬇️ -->
+                <button onclick="refreshData()" class="p-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition"><i class="fa-solid fa-rotate-right"></i> <span data-i18n="refresh_btn">새로고침</span></button>
+                <!-- ⬆️ ---------------- ⬆️ -->
                 <button onclick="handleLogout()" data-i18n="logout_btn" class="p-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition">로그아웃</button>
             </div>
         </header>
@@ -73,7 +76,9 @@
             </div>
             <button onclick="openModal('modal-question')" data-i18n="ask_btn" class="px-6 py-3 bg-indigo-600 text-white rounded-xl shadow-lg hover:bg-indigo-700 transition">+ 질문하기</button>
         </div>
-
+        <!-- ⬇️ 새로 추가할 필터 버튼 영역 ⬇️ -->
+        <div id="filter-buttons" class="flex flex-wrap gap-2 mb-6"></div>
+        <!-- ⬆️ ------------------------ ⬆️ -->
         <div id="question-list" class="space-y-6"></div>
     </div>
 
