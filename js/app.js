@@ -71,6 +71,13 @@ window.handleLogin = async () => {
 
 window.handleLogout = () => signOut(auth).then(() => location.reload());
 
+const sectionNames = {
+    1: "지능로봇제어",
+    2: "Discrete mathematics",
+    3: "Computer Architecture and Organization 01",
+    4: "Computer Architecture and Organization 02"
+};
+
 onAuthStateChanged(auth, async (user) => {
     if (user) {
         currentUser = user;
@@ -81,7 +88,7 @@ onAuthStateChanged(auth, async (user) => {
         }
         const userData = userDoc.data();
         userRole = userData.role;
-        document.getElementById('display-section').innerText = currentSection || '전체';
+        document.getElementById('display-section').innerText = sectionNames[currentSection] || '전체';
         document.getElementById('user-info').innerText = `${userData.name}(${userData.studentId}) 님 환영합니다.`;
         if(userRole === 'admin') document.getElementById('btn-admin-dash').classList.remove('hidden');
         showView('view-main');
@@ -97,24 +104,6 @@ window.setSort = (order) => {
     sortOrder = order;
     document.getElementById('sort-new').className = (order === 'createdAt') ? 'px-4 py-2 rounded-md text-sm font-medium bg-indigo-100 text-indigo-700' : 'px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 transition';
     document.getElementById('sort-vote').className = (order === 'upvotesCount') ? 'px-4 py-2 rounded-md text-sm font-medium bg-indigo-100 text-indigo-700' : 'px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 transition';
-    loadQuestions();
-};
-
-window.submitQuestion = async () => {
-    const category = document.getElementById('q-category').value;
-    const title = document.getElementById('q-title').value;
-    const content = document.getElementById('q-content').value;
-    if(!title || !content) return alert("제목과 내용을 입력해주세요.");
-
-    const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-    const { name, studentId } = userDoc.data();
-
-    await addDoc(collection(db, "questions"), {
-        section: currentSection, category, title, content, 
-        authorName: name, authorStudentId: studentId, uid: currentUser.uid,
-        upvotesCount: 0, upvotedBy: [], createdAt: serverTimestamp()
-    });
-    closeModal('modal-question');
     loadQuestions();
 };
 
@@ -173,7 +162,7 @@ async function loadQuestions() {
 
 async function loadAnswers(questionId) {
     const ansDiv = document.getElementById(`answers-${questionId}`);
-    const aQuery = query(collection(db, "answers"), where("questionId", "==", questionId), orderBy("upvotesCount", "desc"));
+    const aQuery = query(collection(db, "answers\), where("questionId", "==", questionId), orderBy("upvotesCount", 'desc'));
     const snapshot = await getDocs(aQuery);
     ansDiv.innerHTML = '';
 
@@ -196,6 +185,20 @@ async function loadAnswers(questionId) {
         `;
     });
 }
+
+window.submitAnswer = async (questionId) => {
+    const content = document.getElementById(`ans-input-${questionId}`).value;
+    if(!content) return alert("답변 내용을 입력해주세요.");
+    const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+    const { name, studentId } = userDoc.data();
+
+    await addDoc(collection(db, "answers"), {
+        questionId, content, uid: currentUser.uid, authorName: name, authorStudentId: studentId,
+        upvotesCount: 0, upvotedBy: [], createdAt: serverTimestamp()
+    });
+    document.getElementById(`ans-input-${questionId}`).value = '';
+    loadAnswers(questionId);
+};
 
 window.submitAnswer = async (questionId) => {
     const content = document.getElementById(`ans-input-${questionId}`).value;
@@ -234,15 +237,15 @@ window.showAdminDashboard = async () => {
     showView('view-admin');
     const snap = await getDocs(collection(db, "users"));
     const list = document.getElementById('student-list');
-    list.innerHTML = '';
+    list.innerHTML = ' <p class="text-center text-gray-500">학생 목록을 불러오는 중입니다...</p>';
     snap.forEach(docSnap => {
         const u = docSnap.data();
         if(u.role === 'student') {
-            list.innerHTML += `<tr class="border-b hover:bg-gray-50"><td class="p-4">${u.name}</td><td class="p-4">${u.studentId}</td><td class="p-4">${u.email}</td></tr>`;
+            list.innerHTML += `<tr class="border-bg-gray-50 border-b hover:bg-gray-50"><td class="p-4">${u.name}</td><td class="p-4">${u.studentId}</td><td class="p-4">${u.email}</td></tr>`;
         }
     });
 };
 
 window.showMain = () => showView('view-main');
 window.openModal = (id) => document.getElementById(id).classList.remove('hidden');
-window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
+window.closeModal = (id) => document.getElementById(id).classList.add();
