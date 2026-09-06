@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, updateDoc, doc, deleteDoc, serverTimestamp, arrayUnion, arrayRemove, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 import { firebaseConfig, ADMIN_EMAIL } from './config.js';
 
@@ -13,7 +13,6 @@ let userRole = 'student';
 let sortOrder = 'createdAt';
 let isSigningUp = false;
 let currentCategoryFilter = null; 
-let playgroundNickname = ""; // Playground 전용 닉네임 저장 변수
 
 function normalizeCategory(cat) {
     if (!cat) return 'All';
@@ -198,31 +197,13 @@ window.verifyPassword = async () => {
         const authDocSnap = await getDoc(authDocRef);
 
         if (authDocSnap.exists()) {
-            if (currentSection === 5) {
-                // 🌟 Playground(5번)인 경우: 복잡한 회원가입 없이 닉네임만 간단히 입력받음
-                const nickname = prompt(lang === 'ko' ? '사용하실 닉네임을 입력하세요:' : 'Enter your nickname:');
-                if (!nickname || !nickname.trim()) {
-                    alert(lang === 'ko' ? '닉네임을 입력해야 입장할 수 있습니다.' : 'Nickname is required.');
-                    return;
-                }
-                playgroundNickname = nickname.trim();
-                
-                // 익명 인증 처리 후 바로 메인으로 진입
-                await signInAnonymously(auth);
-                document.getElementById('display-section').innerText = sectionNames[5];
-                document.getElementById('user-info').innerText = `${playgroundNickname} (Playground)`;
-                document.getElementById('btn-admin-dash').classList.add('hidden'); // 플레이그라운드선 관리자 대시보드 숨김
+            // 모든 분반(Playground 포함)이 동일한 기존 로그인 정보를 사용합니다.
+            if (currentUser) {
+                document.getElementById('display-section').innerText = sectionNames[currentSection] || '전체';
                 showView('view-main');
                 loadQuestions();
             } else {
-                // 기존 정규 분반들
-                if (currentUser) {
-                    document.getElementById('display-section').innerText = sectionNames[currentSection] || '전체';
-                    showView('view-main');
-                    loadQuestions();
-                } else {
-                    showView('view-auth');
-                }
+                showView('view-auth');
             }
         } else {
             alert(translations[lang].pw_wrong);
@@ -254,7 +235,7 @@ window.handleSignup = async () => {
     const password = document.getElementById('sign-pw').value;
 
     if(!name || !studentId || !email || !password) {
-        const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
+        const lang = (currentSection === 1 || currentSection === 4 || currentSection === 5) ? 'ko' : 'en';
         return alert(translations[lang].no_account);
     }
 
@@ -266,7 +247,7 @@ window.handleSignup = async () => {
         
         await setDoc(doc(db, "users", uid), { uid, name, studentId, email, role });
         
-        const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
+        const lang = (currentSection === 1 || currentSection === 4 || currentSection === 5) ? 'ko' : 'en';
         alert(lang === 'ko' ? '회원가입이 완료되었습니다!' : 'Registration Complete!'); 
         isSigningUp = false;
     } catch (e) { 
@@ -290,18 +271,16 @@ const sectionNames = {
     2: "Discrete mathematics",
     3: "Computer Architecture and Organization",
     4: "한동인성교육",
-    5: "Playground (자유 게시판)" // 🌟 5번 분반 명칭 추가
+    5: "Playground (자유 게시판)"
 };
 
 onAuthStateChanged(auth, async (user) => {
     if (user) {
         currentUser = user;
-        if (currentSection === 5) return; // 플레이그라운드는 별도 닉네임 체계 사용
-
         const userDoc = await getDoc(doc(db, "users", user.uid));
         if (!userDoc.exists()) {
             if(!isSigningUp) {
-                const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
+                const lang = (currentSection === 1 || currentSection === 4 || currentSection === 5) ? 'ko' : 'en';
                 alert(translations[lang]?.user_not_found || translations['ko'].user_not_found);
                 await signOut(auth); 
             }
@@ -310,8 +289,15 @@ onAuthStateChanged(auth, async (user) => {
         const userData = userDoc.data();
         userRole = userData.role;
         
-        const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
-        document.getElementById('user-info').innerText = `${userData.name}(${userData.studentId}) ${translations[lang]?.welcome_msg || '님 환영합니다.'}`;
+        const lang = (currentSection === 1 || currentSection === 4 || currentSection === 5) ? 'ko' : 'en';
+        
+        // Playground에서는 상단 헤더에 익명 모드임을 안내
+        if (currentSection === 5) {
+            document.getElementById('user-info').innerText = `${userData.name}님 환영합니다. (Playground: 글 작성 시 익명/닉네임 적용)`;
+        } else {
+            document.getElementById('user-info').innerText = `${userData.name}(${userData.studentId}) ${translations[lang]?.welcome_msg || '님 환영합니다.'}`;
+        }
+
         if(userRole === 'admin') document.getElementById('btn-admin-dash').classList.remove('hidden');
         
         if (currentSection) {
@@ -362,9 +348,12 @@ async function loadQuestions() {
             }
             
             hasVisibleQuestions = true;
-            // Playground는 누구나 자신이 쓴 글(또는 관리자)을 삭제할 수 있도록 처리
-            const isOwnerOrAdmin = (q.uid === currentUser?.uid || userRole === 'admin' || currentSection === 5);
+            // 본인(UID 일치) 또는 관리자만 삭제 가능
+            const isOwnerOrAdmin = (q.uid === currentUser?.uid || userRole === 'admin');
             const hasUpvoted = q.upvotedBy?.includes(currentUser?.uid);
+
+            // Playground인 경우 닉네임 표시, 정규 분반은 이름(학번) 표시
+            const authorText = (currentSection === 5) ? q.authorName : `${q.authorName}(${q.authorStudentId})`;
 
             const card = document.createElement('div');
             card.className = "bg-white p-6 rounded-2xl shadow-sm border hover:shadow-md transition";
@@ -373,7 +362,7 @@ async function loadQuestions() {
                     <div>
                         <span onclick="filterByCategory('${normCat}')" class="cursor-pointer text-xs font-bold px-2 py-1 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-200 transition">${normCat}</span>
                         <h3 class="text-xl font-bold mt-2">${q.title}</h3>
-                        <p class="text-sm text-gray-400">${q.authorName} | ${q.createdAt?.toDate().toLocaleString() || 'Just now'}</p>
+                        <p class="text-sm text-gray-400">${authorText} | ${q.createdAt?.toDate().toLocaleString() || 'Just now'}</p>
                     </div>
                     <div class="flex gap-2">
                         <button id="upvote-q-${id}" onclick="upvote('questions', '${id}', ${hasUpvoted})" class="p-2 rounded-lg ${hasUpvoted ? 'bg-orange-100 text-orange-600' : 'bg-gray-100'} transition">
@@ -386,6 +375,7 @@ async function loadQuestions() {
                 <div class="border-t pt-4 mt-4">
                     <div id="answers-${id}" class="space-y-3 mb-4"></div>
                     <div class="flex gap-2">
+                        ${currentSection === 5 ? `<input type="text" id="ans-nick-${id}" class="w-24 md:w-32 p-2 border rounded-lg text-sm" placeholder="닉네임">` : ''}
                         <input type="text" id="ans-input-${id}" class="flex-1 p-2 border rounded-lg text-sm" placeholder="${translations[lang].ans_placeholder}">
                         <button onclick="submitAnswer('${id}')" class="px-4 py-2 bg-gray-800 text-white text-sm rounded-lg hover:bg-black transition">${translations[lang].submit_ans_btn}</button>
                     </div>
@@ -422,12 +412,14 @@ async function loadAnswers(questionId) {
         snapshot.forEach(docSnap => {
             const a = docSnap.data();
             const id = docSnap.id;
-            const isOwnerOrAdmin = (a.uid === currentUser?.uid || userRole === 'admin' || currentSection === 5);
+            const isOwnerOrAdmin = (a.uid === currentUser?.uid || userRole === 'admin');
             const hasUpvoted = a.upvotedBy?.includes(currentUser?.uid);
+
+            const authorText = (currentSection === 5) ? a.authorName : `${a.authorName}(${a.authorStudentId})`;
 
             ansDiv.innerHTML += `
                 <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg text-sm">
-                    <div><span class="font-bold">${a.authorName}</span>: ${a.content}</div>
+                    <div><span class="font-bold">${authorText}</span>: ${a.content}</div>
                     <div class="flex gap-2 items-center">
                         <button id="upvote-a-${id}" onclick="upvote('answers', '${id}', ${hasUpvoted})" class="text-xs ${hasUpvoted ? 'text-orange-600' : 'text-gray-400'}">
                             <i class="fa-solid fa-thumbs-up"></i> <span>${a.upvotesCount}</span>
@@ -465,15 +457,17 @@ window.submitQuestion = async () => {
     }
 
     try {
-        let authorName = "익명";
-        let authorStudentId = "";
+        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+        const userData = userDoc.data();
 
+        let authorName = userData.name;
+        let authorStudentId = userData.studentId;
+
+        // 🌟 Playground(5번)의 경우: 설정된 닉네임으로 저장
         if (currentSection === 5) {
-            authorName = playgroundNickname; // Playground는 입력한 닉네임 사용
-        } else {
-            const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-            const userData = userDoc.data();
-            authorName = `${userData.name}(${userData.studentId})`;
+            const nickInput = document.getElementById('q-nickname')?.value.trim();
+            authorName = nickInput ? nickInput : '익명';
+            authorStudentId = ''; // 학번은 비움
         }
 
         await addDoc(collection(db, "questions"), {
@@ -481,8 +475,9 @@ window.submitQuestion = async () => {
             category: category,
             title: title,
             content: content,
-            uid: currentUser ? currentUser.uid : 'anonymous',
+            uid: currentUser.uid,
             authorName: authorName,
+            authorStudentId: authorStudentId,
             upvotesCount: 0,
             upvotedBy: [],
             createdAt: serverTimestamp()
@@ -490,6 +485,7 @@ window.submitQuestion = async () => {
 
         document.getElementById('q-title').value = '';
         document.getElementById('q-content').value = '';
+        if (document.getElementById('q-nickname')) document.getElementById('q-nickname').value = '';
         
         closeModal('modal-question');
         loadQuestions(); 
@@ -508,20 +504,25 @@ window.submitAnswer = async (questionId) => {
     const content = document.getElementById(`ans-input-${questionId}`).value;
     if(!content) return;
     try {
-        let authorName = "익명";
+        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+        const userData = userDoc.data();
+
+        let authorName = userData.name;
+        let authorStudentId = userData.studentId;
+
+        // 🌟 Playground(5번)의 경우: 입력된 닉네임 사용
         if (currentSection === 5) {
-            authorName = playgroundNickname;
-        } else {
-            const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-            const userData = userDoc.data();
-            authorName = `${userData.name}(${userData.studentId})`;
+            const nickInput = document.getElementById(`ans-nick-${questionId}`)?.value.trim();
+            authorName = nickInput ? nickInput : '익명';
+            authorStudentId = '';
         }
 
         await addDoc(collection(db, "answers"), {
-            questionId, content, uid: currentUser ? currentUser.uid : 'anonymous', authorName: authorName,
+            questionId, content, uid: currentUser.uid, authorName: authorName, authorStudentId: authorStudentId,
             upvotesCount: 0, upvotedBy: [], createdAt: serverTimestamp()
         });
         document.getElementById(`ans-input-${questionId}`).value = '';
+        if (document.getElementById(`ans-nick-${questionId}`)) document.getElementById(`ans-nick-${questionId}`).value = '';
         loadAnswers(questionId);
     } catch (e) {
         alert("답변 등록에 실패했습니다: " + e.message);
@@ -557,6 +558,26 @@ window.openModal = (id) => {
     document.getElementById(id).classList.remove('hidden');
     if(id === 'modal-question') {
         populateCategories();
+
+        let nickInput = document.getElementById('q-nickname');
+        const noticeBox = document.getElementById('playground-notice'); // 🌟 안내 박스 가져오기
+
+        if (currentSection === 5) {
+            if (!nickInput) {
+                nickInput = document.createElement('input');
+                nickInput.id = 'q-nickname';
+                nickInput.type = 'text';
+                nickInput.className = 'w-full p-3 border rounded-lg mb-4 text-sm';
+                nickInput.placeholder = '표시할 닉네임을 입력하세요 (미입력 시 익명)';
+                const titleInput = document.getElementById('q-title');
+                titleInput.parentNode.insertBefore(nickInput, titleInput);
+            }
+            nickInput.classList.remove('hidden');
+            if (noticeBox) noticeBox.classList.remove('hidden'); // 🌟 플레이그라운드일 때 안내문구 표시
+        } else {
+            if (nickInput) nickInput.classList.add('hidden');
+            if (noticeBox) noticeBox.classList.add('hidden'); // 🌟 정규 분반일 때는 안내문구 숨김
+        }
     }
 };
 
@@ -587,10 +608,9 @@ window.upvote = async (col, id, hasUpvoted) => {
         const snap = await getDoc(ref);
         const data = snap.data();
         const newCount = hasUpvoted ? Math.max(0, (data.upvotesCount || 1) - 1) : (data.upvotesCount || 0) + 1;
-        const uidKey = currentUser ? currentUser.uid : 'anonymous';
         await updateDoc(ref, {
             upvotesCount: newCount,
-            upvotedBy: hasUpvoted ? arrayRemove(uidKey) : arrayUnion(uidKey)
+            upvotedBy: hasUpvoted ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid)
         });
     } catch(e) {
         console.error("Upvote error:", e);

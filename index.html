@@ -107,6 +107,9 @@
     <div id="modal-question" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
         <div class="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl">
             <h2 data-i18n="modal_title" class="text-2xl font-bold mb-6">질문 작성</h2>
+            <div id="playground-notice" class="hidden mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg leading-relaxed">
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i> <strong>안내:</strong> 화면에는 닉네임이 익명으로 보이지만, 데이터베이스에는 사용자 정보(계정)가 기록되니 건전한 이용 바랍니다.
+            </div>
             <select id="q-category" class="w-full p-3 border rounded-lg mb-4"></select>
             <input type="text" id="q-title" class="w-full p-3 border rounded-lg mb-4" data-i18n-placeholder="q_title_ph" placeholder="제목을 입력하세요">
             <textarea id="q-content" class="w-full p-3 border rounded-lg mb-6 h-32" data-i18n-placeholder="q_content_ph" placeholder="내용을 입력하세요"></textarea>
