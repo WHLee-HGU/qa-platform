@@ -56,11 +56,7 @@ const translations = {
         ans_placeholder: "답변을 입력하세요...",
         submit_ans_btn: "등록",
         delete_confirm: "정말 삭제하시겠습니까?",
-        loading_students: "학생 목록을 불러오는 중입니다...",
-        cat_all: "전체",
-        cat_w1: "1주차",
-        cat_w2: "2주차",
-        cat_w3: "3주차"
+        loading_students: "학생 목록을 불러오는 중입니다..."
     },
     en: {
         select_section: "분반을 선택하세요 (Select your section)",
@@ -104,13 +100,31 @@ const translations = {
         ans_placeholder: "Write an answer...",
         submit_ans_btn: "Submit",
         delete_confirm: "Are you sure you want to delete this?",
-        loading_students: "Loading student list...",
-        cat_all: "All",
-        cat_w1: "Week 1",
-        cat_w2: "Week 2",
-        cat_w3: "Week 3"
+        loading_students: "Loading student list..."
     }
 };
+
+// 1~16주차 카테고리를 동적으로 생성하는 함수
+function populateCategories(lang) {
+    const catSelect = document.getElementById('q-category');
+    if (!catSelect) return;
+    
+    catSelect.innerHTML = '';
+    
+    // '전체' 옵션
+    const allOpt = document.createElement('option');
+    allOpt.value = '전체';
+    allOpt.text = lang === 'ko' ? '전체' : 'All';
+    catSelect.appendChild(allOpt);
+
+    // 1~16주차 자동 생성
+    for(let i = 1; i <= 16; i++) {
+        const opt = document.createElement('option');
+        opt.value = `${i}주차`;
+        opt.text = lang === 'ko' ? `${i}주차` : `Week ${i}`;
+        catSelect.appendChild(opt);
+    }
+}
 
 function updateLanguage(lang) {
     document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -122,22 +136,7 @@ function updateLanguage(lang) {
         if (translations[lang][key]) el.placeholder = translations[lang][key];
     });
 
-    const catSelect = document.getElementById('q-category');
-    if (catSelect) {
-        catSelect.innerHTML = '';
-        const cats = [
-            { val: '전체', text: translations[lang].cat_all },
-            { val: '1주차', text: translations[lang].cat_w1 },
-            { val: '2주차', text: translations[lang].cat_w2 },
-            { val: '3주차', text: translations[lang].cat_w3 }
-        ];
-        cats.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.val;
-            opt.text = c.text;
-            catSelect.appendChild(opt);
-        });
-    }
+    populateCategories(lang);
 }
 
 window.selectSection = (section) => {
@@ -270,7 +269,6 @@ onAuthStateChanged(auth, async (user) => {
 
 window.setSort = (order) => {
     sortOrder = order;
-    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
     document.getElementById('sort-new').className = (order === 'createdAt') ? 'px-4 py-2 rounded-md text-sm font-medium bg-indigo-100 text-indigo-700' : 'px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 transition';
     document.getElementById('sort-vote').className = (order === 'upvotesCount') ? 'px-4 py-2 rounded-md text-sm font-medium bg-indigo-100 text-indigo-700' : 'px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 transition';
     loadQuestions();
@@ -332,7 +330,6 @@ async function loadQuestions() {
 
 async function loadAnswers(questionId) {
     const ansDiv = document.getElementById(`answers-${questionId}`);
-    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
     const aQuery = query(collection(db, "answers"), where("questionId", "==", questionId), orderBy("upvotesCount", 'desc'));
     const snapshot = await getDocs(aQuery);
     ansDiv.innerHTML = '';
@@ -356,6 +353,47 @@ async function loadAnswers(questionId) {
         `;
     });
 }
+
+// 질문 등록 기능 추가 
+window.submitQuestion = async () => {
+    const category = document.getElementById('q-category').value;
+    const title = document.getElementById('q-title').value;
+    const content = document.getElementById('q-content').value;
+    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
+
+    if (!title || !content) {
+        alert(lang === 'ko' ? '제목과 내용을 모두 입력해주세요.' : 'Please enter both title and content.');
+        return;
+    }
+
+    try {
+        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+        const { name, studentId } = userDoc.data();
+
+        await addDoc(collection(db, "questions"), {
+            section: currentSection,
+            category: category,
+            title: title,
+            content: content,
+            uid: currentUser.uid,
+            authorName: name,
+            authorStudentId: studentId,
+            upvotesCount: 0,
+            upvotedBy: [],
+            createdAt: serverTimestamp()
+        });
+
+        // 작성창 비우기
+        document.getElementById('q-title').value = '';
+        document.getElementById('q-content').value = '';
+        
+        closeModal('modal-question');
+        loadQuestions();
+    } catch (e) {
+        console.error(e);
+        alert("등록에 실패했습니다: " + e.message);
+    }
+};
 
 window.submitAnswer = async (questionId) => {
     const content = document.getElementById(`ans-input-${questionId}`).value;
@@ -395,40 +433,17 @@ window.showAdminDashboard = async () => {
 };
 
 window.showMain = () => showView('view-main');
+
 window.openModal = (id) => {
     const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
     document.getElementById(id).classList.remove('hidden');
     if(id === 'modal-question') {
-        const catSelect = document.getElementById('q-category');
-        catSelect.innerHTML = '';
-        const cats = [
-            { val: '전체', text: translations[lang].cat_all },
-            { val: '1주차', text: translations[lang].cat_w1 },
-            { val: '2주차', text: translations[lang].cat_w2 },
-            { val: '3주차', text: translations[lang].cat_w3 }
-        ];
-        cats.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.val;
-            opt.text = c.text;
-            catSelect.appendChild(opt);
-        });
+        populateCategories(lang);
     }
 };
 
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
 
-// Global upvote function for accessibility
-window.upvote = async (col, id, hasUpvoted) => {
-    const ref = doc(db, col, id);
-    await updateDoc(ref, {
-        upvotesCount: hasUpvoted ? 0 : 1, 
-        upvotedBy: hasUpvoted ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid)
-    });
-    col === 'questions' ? loadQuestions() : loadAnswers(id.split('-')[0]); 
-};
-
-// Fix upvote logic specifically for the current simplified structure
 async function handleUpvote(col, id, hasUpvoted) {
     const ref = doc(db, col, id);
     const snap = await getDoc(ref);
@@ -438,10 +453,10 @@ async function handleUpvote(col, id, hasUpvoted) {
         upvotesCount: Math.max(0, newCount),
         upvotedBy: hasUpvoted ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid)
     });
+    col === 'questions' ? loadQuestions() : loadAnswers(id.split('-')[0]);
 }
 window.upvote = handleUpvote;
 
-// app.js 맨 밑에 추가
 window.goBackToSections = () => {
     currentSection = null;
     document.getElementById('common-pw').value = '';
