@@ -12,6 +12,7 @@ let currentUser = null;
 let userRole = 'student';
 let sortOrder = 'createdAt';
 let isSigningUp = false;
+let currentCategoryFilter = null; // 현재 선택된 주차 필터 상태 저장
 
 const translations = {
     ko: {
@@ -111,13 +112,11 @@ function populateCategories(lang) {
     
     catSelect.innerHTML = '';
     
-    // '전체' 옵션
     const allOpt = document.createElement('option');
     allOpt.value = '전체';
     allOpt.text = lang === 'ko' ? '전체' : 'All';
     catSelect.appendChild(allOpt);
 
-    // 1~16주차 자동 생성
     for(let i = 1; i <= 16; i++) {
         const opt = document.createElement('option');
         opt.value = `${i}주차`;
@@ -139,8 +138,20 @@ function updateLanguage(lang) {
     populateCategories(lang);
 }
 
+// 주차(Category) 클릭 시 필터링을 수행하는 함수 추가
+window.filterByCategory = (category) => {
+    // '전체'나 'All'을 클릭하면 필터를 해제(null)합니다.
+    if (category === '전체' || category === 'All') {
+        currentCategoryFilter = null;
+    } else {
+        currentCategoryFilter = category;
+    }
+    loadQuestions();
+};
+
 window.selectSection = (section) => {
     currentSection = section;
+    currentCategoryFilter = null; // 다른 분반을 선택하면 필터 초기화
     const lang = (section === 1 || section === 4) ? 'ko' : 'en';
     updateLanguage(lang);
     showView('view-password');
@@ -289,9 +300,33 @@ async function loadQuestions() {
             return;
         }
 
+        // 특정 주차가 선택되었을 때 상단에 표시할 알림창 UI
+        if (currentCategoryFilter) {
+            const filterAlert = document.createElement('div');
+            filterAlert.className = "flex justify-between items-center p-4 bg-indigo-50 text-indigo-800 rounded-xl border border-indigo-200 shadow-sm";
+            filterAlert.innerHTML = `
+                <span class="text-sm">
+                    <i class="fa-solid fa-filter mr-2"></i> <strong>${currentCategoryFilter}</strong> ${lang === 'ko' ? '질문만 모아보는 중입니다.' : 'questions filtered.'}
+                </span>
+                <button onclick="filterByCategory('전체')" class="text-xs px-3 py-1 bg-white text-indigo-600 border border-indigo-200 rounded-md hover:bg-indigo-100 transition">
+                    ${lang === 'ko' ? '전체 보기' : 'Show All'}
+                </button>
+            `;
+            qList.appendChild(filterAlert);
+        }
+
+        let hasVisibleQuestions = false;
+
         snapshot.forEach((docSnap) => {
             const q = docSnap.data();
             const id = docSnap.id;
+
+            // 브라우저에서 필터링: 선택된 필터가 있고, 현재 질문의 카테고리와 다르면 화면에 그리지 않고 건너뜀
+            if (currentCategoryFilter && q.category !== currentCategoryFilter) {
+                return; 
+            }
+            
+            hasVisibleQuestions = true;
             const isOwnerOrAdmin = (q.uid === currentUser.uid || userRole === 'admin');
             const hasUpvoted = q.upvotedBy?.includes(currentUser.uid);
 
@@ -300,7 +335,8 @@ async function loadQuestions() {
             card.innerHTML = `
                 <div class="flex justify-between items-start mb-3">
                     <div>
-                        <span class="text-xs font-bold px-2 py-1 bg-indigo-50 text-indigo-600 rounded">${q.category}</span>
+                        <!-- 라벨에 커서 효과(cursor-pointer)와 필터 클릭 이벤트를 추가했습니다 -->
+                        <span onclick="filterByCategory('${q.category}')" class="cursor-pointer text-xs font-bold px-2 py-1 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-200 transition" title="${lang === 'ko' ? '클릭하여 이 주차만 모아보기' : 'Click to filter by this week'}">${q.category}</span>
                         <h3 class="text-xl font-bold mt-2">${q.title}</h3>
                         <p class="text-sm text-gray-400">${q.authorName}(${q.authorStudentId}) | ${q.createdAt?.toDate().toLocaleString() || 'Just now'}</p>
                     </div>
@@ -323,6 +359,15 @@ async function loadQuestions() {
             qList.appendChild(card);
             loadAnswers(id);
         });
+
+        // 필터링 결과 질문이 하나도 없을 경우 표시
+        if (!hasVisibleQuestions && currentCategoryFilter) {
+            const emptyMsg = document.createElement('p');
+            emptyMsg.className = "text-center text-gray-500 py-10";
+            emptyMsg.innerText = lang === 'ko' ? '해당 주차에 등록된 질문이 없습니다.' : 'No questions found for this week.';
+            qList.appendChild(emptyMsg);
+        }
+
     } catch (e) {
         qList.innerHTML = `<p class="text-center text-red-500">Error: ${e.message}<br>Firestore Index may be required.</p>`;
     }
@@ -354,7 +399,6 @@ async function loadAnswers(questionId) {
     });
 }
 
-// 질문 등록 기능 추가 
 window.submitQuestion = async () => {
     const category = document.getElementById('q-category').value;
     const title = document.getElementById('q-title').value;
@@ -383,7 +427,6 @@ window.submitQuestion = async () => {
             createdAt: serverTimestamp()
         });
 
-        // 작성창 비우기
         document.getElementById('q-title').value = '';
         document.getElementById('q-content').value = '';
         
@@ -459,6 +502,7 @@ window.upvote = handleUpvote;
 
 window.goBackToSections = () => {
     currentSection = null;
+    currentCategoryFilter = null; // 초기화
     document.getElementById('common-pw').value = '';
     showView('view-section');
 };
