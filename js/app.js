@@ -12,7 +12,7 @@ let currentUser = null;
 let userRole = 'student';
 let sortOrder = 'createdAt';
 let isSigningUp = false;
-let currentCategoryFilter = null; // 현재 선택된 주차 필터 상태 저장
+let currentCategoryFilter = null; 
 
 const translations = {
     ko: {
@@ -105,22 +105,22 @@ const translations = {
     }
 };
 
-// 1~16주차 카테고리를 동적으로 생성하는 함수
-function populateCategories(lang) {
+// 1. 한국어/영어 분반 상관없이 무조건 영어(All, Week 1~)로 카테고리 생성
+function populateCategories() {
     const catSelect = document.getElementById('q-category');
     if (!catSelect) return;
     
     catSelect.innerHTML = '';
     
     const allOpt = document.createElement('option');
-    allOpt.value = '전체';
-    allOpt.text = lang === 'ko' ? '전체' : 'All';
+    allOpt.value = 'All';
+    allOpt.text = 'All';
     catSelect.appendChild(allOpt);
 
     for(let i = 1; i <= 16; i++) {
         const opt = document.createElement('option');
-        opt.value = `${i}주차`;
-        opt.text = lang === 'ko' ? `${i}주차` : `Week ${i}`;
+        opt.value = `Week ${i}`;
+        opt.text = `Week ${i}`;
         catSelect.appendChild(opt);
     }
 }
@@ -134,13 +134,11 @@ function updateLanguage(lang) {
         const key = el.getAttribute('data-i18n-placeholder');
         if (translations[lang][key]) el.placeholder = translations[lang][key];
     });
-
-    populateCategories(lang);
+    populateCategories(); // 언어에 상관없이 무조건 영문으로 생성
 }
 
-// 주차(Category) 클릭 시 필터링을 수행하는 함수 추가
 window.filterByCategory = (category) => {
-    // '전체'나 'All'을 클릭하면 필터를 해제(null)합니다.
+    // 기존에 '전체'로 쓰였던 글이 있을 수 있어 호환성을 위해 둘 다 남겨둡니다.
     if (category === '전체' || category === 'All') {
         currentCategoryFilter = null;
     } else {
@@ -151,7 +149,7 @@ window.filterByCategory = (category) => {
 
 window.selectSection = (section) => {
     currentSection = section;
-    currentCategoryFilter = null; // 다른 분반을 선택하면 필터 초기화
+    currentCategoryFilter = null; 
     const lang = (section === 1 || section === 4) ? 'ko' : 'en';
     updateLanguage(lang);
     showView('view-password');
@@ -300,15 +298,14 @@ async function loadQuestions() {
             return;
         }
 
-        // 특정 주차가 선택되었을 때 상단에 표시할 알림창 UI
         if (currentCategoryFilter) {
             const filterAlert = document.createElement('div');
-            filterAlert.className = "flex justify-between items-center p-4 bg-indigo-50 text-indigo-800 rounded-xl border border-indigo-200 shadow-sm";
+            filterAlert.className = "flex justify-between items-center p-4 bg-indigo-50 text-indigo-800 rounded-xl border border-indigo-200 shadow-sm mb-4";
             filterAlert.innerHTML = `
                 <span class="text-sm">
                     <i class="fa-solid fa-filter mr-2"></i> <strong>${currentCategoryFilter}</strong> ${lang === 'ko' ? '질문만 모아보는 중입니다.' : 'questions filtered.'}
                 </span>
-                <button onclick="filterByCategory('전체')" class="text-xs px-3 py-1 bg-white text-indigo-600 border border-indigo-200 rounded-md hover:bg-indigo-100 transition">
+                <button onclick="filterByCategory('All')" class="text-xs px-3 py-1 bg-white text-indigo-600 border border-indigo-200 rounded-md hover:bg-indigo-100 transition shadow-sm">
                     ${lang === 'ko' ? '전체 보기' : 'Show All'}
                 </button>
             `;
@@ -321,7 +318,6 @@ async function loadQuestions() {
             const q = docSnap.data();
             const id = docSnap.id;
 
-            // 브라우저에서 필터링: 선택된 필터가 있고, 현재 질문의 카테고리와 다르면 화면에 그리지 않고 건너뜀
             if (currentCategoryFilter && q.category !== currentCategoryFilter) {
                 return; 
             }
@@ -335,7 +331,6 @@ async function loadQuestions() {
             card.innerHTML = `
                 <div class="flex justify-between items-start mb-3">
                     <div>
-                        <!-- 라벨에 커서 효과(cursor-pointer)와 필터 클릭 이벤트를 추가했습니다 -->
                         <span onclick="filterByCategory('${q.category}')" class="cursor-pointer text-xs font-bold px-2 py-1 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-200 transition" title="${lang === 'ko' ? '클릭하여 이 주차만 모아보기' : 'Click to filter by this week'}">${q.category}</span>
                         <h3 class="text-xl font-bold mt-2">${q.title}</h3>
                         <p class="text-sm text-gray-400">${q.authorName}(${q.authorStudentId}) | ${q.createdAt?.toDate().toLocaleString() || 'Just now'}</p>
@@ -360,7 +355,6 @@ async function loadQuestions() {
             loadAnswers(id);
         });
 
-        // 필터링 결과 질문이 하나도 없을 경우 표시
         if (!hasVisibleQuestions && currentCategoryFilter) {
             const emptyMsg = document.createElement('p');
             emptyMsg.className = "text-center text-gray-500 py-10";
@@ -369,87 +363,68 @@ async function loadQuestions() {
         }
 
     } catch (e) {
-        qList.innerHTML = `<p class="text-center text-red-500">Error: ${e.message}<br>Firestore Index may be required.</p>`;
+        // 색인(Index) 에러 발생 시 클릭 가능한 파란색 링크 생성
+        let errorHtml = e.message;
+        const linkMatch = e.message.match(/https:\/\/[^\s]+/);
+        if (linkMatch) {
+            errorHtml = `색인(Index) 생성이 필요합니다.<br><br><a href="${linkMatch[0]}" target="_blank" class="text-blue-600 underline font-bold text-lg bg-blue-50 p-2 rounded">👉 여기를 클릭해서 색인을 생성해주세요</a><br><br>(생성 완료 후 새로고침 해주세요)`;
+        }
+        qList.innerHTML = `<div class="text-center text-red-500 py-10">${errorHtml}</div>`;
     }
 }
 
 async function loadAnswers(questionId) {
     const ansDiv = document.getElementById(`answers-${questionId}`);
-    const aQuery = query(collection(db, "answers"), where("questionId", "==", questionId), orderBy("upvotesCount", 'desc'));
-    const snapshot = await getDocs(aQuery);
-    ansDiv.innerHTML = '';
-
-    snapshot.forEach(docSnap => {
-        const a = docSnap.data();
-        const id = docSnap.id;
-        const isOwnerOrAdmin = (a.uid === currentUser.uid || userRole === 'admin');
-        const hasUpvoted = a.upvotedBy?.includes(currentUser.uid);
-
-        ansDiv.innerHTML += `
-            <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg text-sm">
-                <div><span class="font-bold">${a.authorName}(${a.authorStudentId})</span>: ${a.content}</div>
-                <div class="flex gap-2 items-center">
-                    <button onclick="upvote('answers', '${id}', ${hasUpvoted})" class="text-xs ${hasUpvoted ? 'text-orange-600' : 'text-gray-400'}">
-                        <i class="fa-solid fa-thumbs-up"></i> ${a.upvotesCount}
-                    </button>
-                    ${isOwnerOrAdmin ? `<button onclick="deleteItem('answers', '${id}')" class="text-xs text-gray-300 hover:text-red-500"><i class="fa-solid fa-xmark"></i></button>` : ''}
-                </div>
-            </div>
-        `;
-    });
-}
-
-window.submitQuestion = async () => {
-    const category = document.getElementById('q-category').value;
-    const title = document.getElementById('q-title').value;
-    const content = document.getElementById('q-content').value;
-    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
-
-    if (!title || !content) {
-        alert(lang === 'ko' ? '제목과 내용을 모두 입력해주세요.' : 'Please enter both title and content.');
-        return;
-    }
-
     try {
-        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-        const { name, studentId } = userDoc.data();
+        const aQuery = query(collection(db, "answers"), where("questionId", "==", questionId), orderBy("upvotesCount", 'desc'));
+        const snapshot = await getDocs(aQuery);
+        ansDiv.innerHTML = '';
 
-        await addDoc(collection(db, "questions"), {
-            section: currentSection,
-            category: category,
-            title: title,
-            content: content,
-            uid: currentUser.uid,
-            authorName: name,
-            authorStudentId: studentId,
-            upvotesCount: 0,
-            upvotedBy: [],
-            createdAt: serverTimestamp()
+        snapshot.forEach(docSnap => {
+            const a = docSnap.data();
+            const id = docSnap.id;
+            const isOwnerOrAdmin = (a.uid === currentUser.uid || userRole === 'admin');
+            const hasUpvoted = a.upvotedBy?.includes(currentUser.uid);
+
+            ansDiv.innerHTML += `
+                <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg text-sm">
+                    <div><span class="font-bold">${a.authorName}(${a.authorStudentId})</span>: ${a.content}</div>
+                    <div class="flex gap-2 items-center">
+                        <button onclick="upvote('answers', '${id}', ${hasUpvoted})" class="text-xs ${hasUpvoted ? 'text-orange-600' : 'text-gray-400'}">
+                            <i class="fa-solid fa-thumbs-up"></i> ${a.upvotesCount}
+                        </button>
+                        ${isOwnerOrAdmin ? `<button onclick="deleteItem('answers', '${id}')" class="text-xs text-gray-300 hover:text-red-500"><i class="fa-solid fa-xmark"></i></button>` : ''}
+                    </div>
+                </div>
+            `;
         });
-
-        document.getElementById('q-title').value = '';
-        document.getElementById('q-content').value = '';
-        
-        closeModal('modal-question');
-        loadQuestions();
     } catch (e) {
-        console.error(e);
-        alert("등록에 실패했습니다: " + e.message);
+        // 답변 불러오기 실패 시(색인 필요) 각 답변 칸에 클릭 가능한 링크 제공
+        const linkMatch = e.message.match(/https:\/\/[^\s]+/);
+        if (linkMatch) {
+            ansDiv.innerHTML = `<p class="text-xs text-red-500 p-2 bg-red-50 rounded">답변 색인 생성 필요: <a href="${linkMatch[0]}" target="_blank" class="text-blue-600 underline font-bold">여기를 클릭하세요</a></p>`;
+        } else {
+            ansDiv.innerHTML = `<p class="text-xs text-red-500">Error: ${e.message}</p>`;
+        }
     }
-};
+}
 
 window.submitAnswer = async (questionId) => {
     const content = document.getElementById(`ans-input-${questionId}`).value;
     if(!content) return;
-    const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-    const { name, studentId } = userDoc.data();
+    try {
+        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+        const { name, studentId } = userDoc.data();
 
-    await addDoc(collection(db, "answers"), {
-        questionId, content, uid: currentUser.uid, authorName: name, authorStudentId: studentId,
-        upvotesCount: 0, upvotedBy: [], createdAt: serverTimestamp()
-    });
-    document.getElementById(`ans-input-${questionId}`).value = '';
-    loadAnswers(questionId);
+        await addDoc(collection(db, "answers"), {
+            questionId, content, uid: currentUser.uid, authorName: name, authorStudentId: studentId,
+            upvotesCount: 0, upvotedBy: [], createdAt: serverTimestamp()
+        });
+        document.getElementById(`ans-input-${questionId}`).value = '';
+        loadAnswers(questionId);
+    } catch (e) {
+        alert("답변 등록에 실패했습니다: " + e.message);
+    }
 };
 
 window.deleteItem = async (col, id) => {
@@ -478,10 +453,9 @@ window.showAdminDashboard = async () => {
 window.showMain = () => showView('view-main');
 
 window.openModal = (id) => {
-    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
     document.getElementById(id).classList.remove('hidden');
     if(id === 'modal-question') {
-        populateCategories(lang);
+        populateCategories();
     }
 };
 
@@ -502,7 +476,7 @@ window.upvote = handleUpvote;
 
 window.goBackToSections = () => {
     currentSection = null;
-    currentCategoryFilter = null; // 초기화
+    currentCategoryFilter = null; 
     document.getElementById('common-pw').value = '';
     showView('view-section');
 };
