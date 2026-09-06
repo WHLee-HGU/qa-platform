@@ -1,8 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, updateDoc, doc, deleteDoc, serverTimestamp, arrayUnion, arrayRemove, getDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
-import { firebaseConfig, ADMIN_EMAIL } from './config.js';
 import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, updateDoc, doc, deleteDoc, serverTimestamp, arrayUnion, arrayRemove, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+import { firebaseConfig, ADMIN_EMAIL } from './config.js';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -12,11 +11,11 @@ let currentSection = null;
 let currentUser = null;
 let userRole = 'student';
 let sortOrder = 'createdAt';
-let isSigningUp = false; // Signup race condition flag
+let isSigningUp = false;
 
 const translations = {
     ko: {
-        select_section: "분반을 선택하세요",
+        select_section: "분반을 선택하세요 (Select your section)",
         enter_pw: "접근 비밀번호 입력",
         pw_placeholder: "비밀번호를 입력하세요",
         next_step: "다음 단계",
@@ -64,7 +63,7 @@ const translations = {
         cat_w3: "3주차"
     },
     en: {
-        select_section: "Select your section",
+        select_section: "분반을 선택하세요 (Select your section)",
         enter_pw: "Enter Access Password",
         pw_placeholder: "Please enter password",
         next_step: "Next Step",
@@ -150,7 +149,7 @@ window.selectSection = (section) => {
 
 window.verifyPassword = async () => {
     const pw = document.getElementById('common-pw').value;
-    const lang = (currentSection === 1 || currentSection === 4 || section === 4) ? 'ko' : 'en';
+    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
 
     if (!pw) {
         alert(translations[lang].pw_wrong);
@@ -158,12 +157,10 @@ window.verifyPassword = async () => {
     }
 
     try {
-        // 코드에 비밀번호를 노출하지 않고, Firestore에 해당 '분반_입력비밀번호' 이름의 문서가 존재하는지 확인합니다.
         const authDocRef = doc(db, "section_auth", `${currentSection}_${pw}`);
         const authDocSnap = await getDoc(authDocRef);
 
         if (authDocSnap.exists()) {
-            // 문서가 존재함 = 비밀번호 일치!
             if (currentUser) {
                 document.getElementById('display-section').innerText = sectionNames[currentSection] || '전체';
                 showView('view-main');
@@ -172,7 +169,6 @@ window.verifyPassword = async () => {
                 showView('view-auth');
             }
         } else {
-            // 문서가 없음 = 비밀번호 불일치
             alert(translations[lang].pw_wrong);
         }
     } catch (error) {
@@ -180,6 +176,7 @@ window.verifyPassword = async () => {
         alert("인증 서버에 문제가 발생했습니다.");
     }
 };
+
 window.toggleAuth = (isSignup) => {
     document.getElementById('auth-login').classList.toggle('hidden', isSignup);
     document.getElementById('auth-signup').classList.toggle('hidden', !isSignup);
@@ -201,7 +198,7 @@ window.handleSignup = async () => {
     const password = document.getElementById('sign-pw').value;
 
     if(!name || !studentId || !email || !password) {
-        const lang = (currentSection === 1 || currentSection === 4 || section === 4) ? 'ko' : 'en';
+        const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
         return alert(translations[lang].no_account);
     }
 
@@ -211,10 +208,9 @@ window.handleSignup = async () => {
         const uid = userCredential.user.uid;
         const role = (email === ADMIN_EMAIL) ? 'admin' : 'student';
         
-        // --- 여기를 수정했습니다: addDoc 대신 setDoc 사용 ---
         await setDoc(doc(db, "users", uid), { uid, name, studentId, email, role });
         
-        const lang = (currentSection === 1 || currentSection === 4 || section === 4) ? 'ko' : 'en';
+        const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
         alert(lang === 'ko' ? '회원가입이 완료되었습니다!' : 'Registration Complete!'); 
         isSigningUp = false;
     } catch (e) { 
@@ -246,8 +242,7 @@ onAuthStateChanged(auth, async (user) => {
         const userDoc = await getDoc(doc(db, "users", user.uid));
         if (!userDoc.exists()) {
             if(!isSigningUp) {
-                const lang = (currentSection === 1 || currentSection === 4 || section === 4) ? 'ko' : 'en';
-                // currentSection이 null일 경우를 대비한 안전 장치 추가
+                const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
                 alert(translations[lang]?.user_not_found || translations['ko'].user_not_found);
                 await signOut(auth); 
             }
@@ -256,11 +251,10 @@ onAuthStateChanged(auth, async (user) => {
         const userData = userDoc.data();
         userRole = userData.role;
         
-        const lang = (currentSection === 1 || currentSection === 4 || section === 4) ? 'ko' : 'en';
+        const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
         document.getElementById('user-info').innerText = `${userData.name}(${userData.studentId}) ${translations[lang]?.welcome_msg || '님 환영합니다.'}`;
         if(userRole === 'admin') document.getElementById('btn-admin-dash').classList.remove('hidden');
         
-        // 사용자가 로그인되어 있고 분반 선택까지 완료한 상태일 때만 메인 화면 표시
         if (currentSection) {
             document.getElementById('display-section').innerText = sectionNames[currentSection] || '전체';
             showView('view-main');
@@ -268,19 +262,15 @@ onAuthStateChanged(auth, async (user) => {
         }
     } else {
         currentUser = null;
-        // 페이지 새로고침 등 초기 접속 시 분반 선택 화면으로 이동
         if(!currentSection) {
             showView('view-section');
         }
-        // 사용자가 분반 버튼을 누르거나 비밀번호를 입력하는 흐름은 
-        // selectSection()과 verifyPassword() 함수에서 화면 이동(showView)을 알아서 처리하므로
-        // 여기서는 더 이상 개입(비밀번호 확인)할 필요가 없습니다.
     }
 });
 
 window.setSort = (order) => {
     sortOrder = order;
-    const lang = (currentSection === 1 || currentSection === 4 || section === 4) ? 'ko' : 'en';
+    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
     document.getElementById('sort-new').className = (order === 'createdAt') ? 'px-4 py-2 rounded-md text-sm font-medium bg-indigo-100 text-indigo-700' : 'px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 transition';
     document.getElementById('sort-vote').className = (order === 'upvotesCount') ? 'px-4 py-2 rounded-md text-sm font-medium bg-indigo-100 text-indigo-700' : 'px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 transition';
     loadQuestions();
@@ -288,7 +278,7 @@ window.setSort = (order) => {
 
 async function loadQuestions() {
     const qList = document.getElementById('question-list');
-    const lang = (currentSection === 1 || currentSection === 4 || section === 4) ? 'ko' : 'en';
+    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
     qList.innerHTML = `<p class="text-center text-gray-500">${translations[lang].loading_q}</p>`;
 
     try {
@@ -342,7 +332,7 @@ async function loadQuestions() {
 
 async function loadAnswers(questionId) {
     const ansDiv = document.getElementById(`answers-${questionId}`);
-    const lang = (currentSection === 1 || currentSection === 4 || section === 4) ? 'ko' : 'en';
+    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
     const aQuery = query(collection(db, "answers"), where("questionId", "==", questionId), orderBy("upvotesCount", 'desc'));
     const snapshot = await getDocs(aQuery);
     ansDiv.innerHTML = '';
@@ -382,7 +372,7 @@ window.submitAnswer = async (questionId) => {
 };
 
 window.deleteItem = async (col, id) => {
-    const lang = (currentSection === 1 || currentSection === 4 || section === 4) ? 'ko' : 'en';
+    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
     if(confirm(translations[lang].delete_confirm)) {
         await deleteDoc(doc(db, col, id));
         loadQuestions();
@@ -391,7 +381,7 @@ window.deleteItem = async (col, id) => {
 
 window.showAdminDashboard = async () => {
     showView('view-admin');
-    const lang = (currentSection === 1 || currentSection === 4 || section === 4) ? 'ko' : 'en';
+    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
     const snap = await getDocs(collection(db, "users"));
     const list = document.getElementById('student-list');
     list.innerHTML = `<p class="text-center text-gray-500">${translations[lang].loading_students}</p>`;
@@ -406,7 +396,7 @@ window.showAdminDashboard = async () => {
 
 window.showMain = () => showView('view-main');
 window.openModal = (id) => {
-    const lang = (currentSection === 1 || currentSection === 4 || section === 4) ? 'ko' : 'en';
+    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
     document.getElementById(id).classList.remove('hidden');
     if(id === 'modal-question') {
         const catSelect = document.getElementById('q-category');
@@ -432,10 +422,9 @@ window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
 window.upvote = async (col, id, hasUpvoted) => {
     const ref = doc(db, col, id);
     await updateDoc(ref, {
-        upvotesCount: hasUpvoted ? 0 : 1, // This is a simplified logic for demo; should use increment
+        upvotesCount: hasUpvoted ? 0 : 1, 
         upvotedBy: hasUpvoted ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid)
     });
-    // Re-fetch to update count correctly if using complex increments, but here we just reload
     col === 'questions' ? loadQuestions() : loadAnswers(id.split('-')[0]); 
 };
 
