@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, updateDoc, doc, deleteDoc, serverTimestamp, arrayUnion, arrayRemove, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 import { firebaseConfig, ADMIN_EMAIL } from './config.js';
 
@@ -13,8 +13,8 @@ let userRole = 'student';
 let sortOrder = 'createdAt';
 let isSigningUp = false;
 let currentCategoryFilter = null; 
+let playgroundNickname = ""; // Playground 전용 닉네임 저장 변수
 
-// 🌟 데이터베이스의 과거 '1주차' 기록을 'Week 1'로 실시간 번역해주는 함수
 function normalizeCategory(cat) {
     if (!cat) return 'All';
     if (cat === '전체' || cat === 'All') return 'All';
@@ -134,10 +134,9 @@ function populateCategories() {
     }
 }
 
-// 🌟 화면 상단에 1~16주차 필터 버튼들을 그려주는 함수
 function renderFilterBar() {
     const container = document.getElementById('filter-buttons');
-    if (!container) return; // HTML에 영역이 없으면 무시
+    if (!container) return;
     
     container.innerHTML = '';
     
@@ -148,12 +147,9 @@ function renderFilterBar() {
         const isActive = (currentCategoryFilter || 'All') === cat;
         const btn = document.createElement('button');
         btn.innerText = cat;
-        
-        // 클릭된 버튼은 진한 파란색으로, 나머지는 연한 회색으로 표시
         btn.className = isActive 
             ? 'px-4 py-1.5 bg-indigo-600 text-white text-sm font-bold rounded-full shadow-md transition' 
             : 'px-4 py-1.5 bg-white border border-gray-300 text-gray-600 hover:text-indigo-600 text-sm font-medium rounded-full hover:bg-indigo-50 transition shadow-sm';
-        
         btn.onclick = () => filterByCategory(cat);
         container.appendChild(btn);
     });
@@ -172,11 +168,7 @@ function updateLanguage(lang) {
 }
 
 window.filterByCategory = (category) => {
-    if (category === 'All') {
-        currentCategoryFilter = null;
-    } else {
-        currentCategoryFilter = category;
-    }
+    currentCategoryFilter = (category === 'All') ? null : category;
     loadQuestions();
 };
 
@@ -187,14 +179,14 @@ window.refreshData = () => {
 window.selectSection = (section) => {
     currentSection = section;
     currentCategoryFilter = null; 
-    const lang = (section === 1 || section === 4) ? 'ko' : 'en';
+    const lang = (section === 1 || section === 4 || section === 5) ? 'ko' : 'en';
     updateLanguage(lang);
     showView('view-password');
 };
 
 window.verifyPassword = async () => {
     const pw = document.getElementById('common-pw').value;
-    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
+    const lang = (currentSection === 1 || currentSection === 4 || currentSection === 5) ? 'ko' : 'en';
 
     if (!pw) {
         alert(translations[lang].pw_wrong);
@@ -206,12 +198,31 @@ window.verifyPassword = async () => {
         const authDocSnap = await getDoc(authDocRef);
 
         if (authDocSnap.exists()) {
-            if (currentUser) {
-                document.getElementById('display-section').innerText = sectionNames[currentSection] || '전체';
+            if (currentSection === 5) {
+                // 🌟 Playground(5번)인 경우: 복잡한 회원가입 없이 닉네임만 간단히 입력받음
+                const nickname = prompt(lang === 'ko' ? '사용하실 닉네임을 입력하세요:' : 'Enter your nickname:');
+                if (!nickname || !nickname.trim()) {
+                    alert(lang === 'ko' ? '닉네임을 입력해야 입장할 수 있습니다.' : 'Nickname is required.');
+                    return;
+                }
+                playgroundNickname = nickname.trim();
+                
+                // 익명 인증 처리 후 바로 메인으로 진입
+                await signInAnonymously(auth);
+                document.getElementById('display-section').innerText = sectionNames[5];
+                document.getElementById('user-info').innerText = `${playgroundNickname} (Playground)`;
+                document.getElementById('btn-admin-dash').classList.add('hidden'); // 플레이그라운드선 관리자 대시보드 숨김
                 showView('view-main');
                 loadQuestions();
             } else {
-                showView('view-auth');
+                // 기존 정규 분반들
+                if (currentUser) {
+                    document.getElementById('display-section').innerText = sectionNames[currentSection] || '전체';
+                    showView('view-main');
+                    loadQuestions();
+                } else {
+                    showView('view-auth');
+                }
             }
         } else {
             alert(translations[lang].pw_wrong);
@@ -278,12 +289,15 @@ const sectionNames = {
     1: "지능로봇제어",
     2: "Discrete mathematics",
     3: "Computer Architecture and Organization",
-    4: "한동인성교육"
+    4: "한동인성교육",
+    5: "Playground (자유 게시판)" // 🌟 5번 분반 명칭 추가
 };
 
 onAuthStateChanged(auth, async (user) => {
     if (user) {
         currentUser = user;
+        if (currentSection === 5) return; // 플레이그라운드는 별도 닉네임 체계 사용
+
         const userDoc = await getDoc(doc(db, "users", user.uid));
         if (!userDoc.exists()) {
             if(!isSigningUp) {
@@ -321,9 +335,9 @@ window.setSort = (order) => {
 };
 
 async function loadQuestions() {
-    renderFilterBar(); // 질문을 불러올 때 필터 버튼 영역도 새롭게 칠해줍니다.
+    renderFilterBar(); 
     const qList = document.getElementById('question-list');
-    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
+    const lang = (currentSection === 1 || currentSection === 4 || currentSection === 5) ? 'ko' : 'en';
     qList.innerHTML = `<p class="text-center text-gray-500">${translations[lang].loading_q}</p>`;
 
     try {
@@ -341,27 +355,25 @@ async function loadQuestions() {
         snapshot.forEach((docSnap) => {
             const q = docSnap.data();
             const id = docSnap.id;
-            
-            // 🌟 1주차 -> Week 1 로 강제 번역
             const normCat = normalizeCategory(q.category);
 
-            // 필터링 적용 (현재 선택된 필터가 있고, 번역된 카테고리와 다르면 건너뜀)
             if (currentCategoryFilter && normCat !== currentCategoryFilter) {
                 return; 
             }
             
             hasVisibleQuestions = true;
-            const isOwnerOrAdmin = (q.uid === currentUser.uid || userRole === 'admin');
-            const hasUpvoted = q.upvotedBy?.includes(currentUser.uid);
+            // Playground는 누구나 자신이 쓴 글(또는 관리자)을 삭제할 수 있도록 처리
+            const isOwnerOrAdmin = (q.uid === currentUser?.uid || userRole === 'admin' || currentSection === 5);
+            const hasUpvoted = q.upvotedBy?.includes(currentUser?.uid);
 
             const card = document.createElement('div');
             card.className = "bg-white p-6 rounded-2xl shadow-sm border hover:shadow-md transition";
             card.innerHTML = `
                 <div class="flex justify-between items-start mb-3">
                     <div>
-                        <span onclick="filterByCategory('${normCat}')" class="cursor-pointer text-xs font-bold px-2 py-1 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-200 transition" title="${lang === 'ko' ? '클릭하여 이 주차만 모아보기' : 'Click to filter by this week'}">${normCat}</span>
+                        <span onclick="filterByCategory('${normCat}')" class="cursor-pointer text-xs font-bold px-2 py-1 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-200 transition">${normCat}</span>
                         <h3 class="text-xl font-bold mt-2">${q.title}</h3>
-                        <p class="text-sm text-gray-400">${q.authorName}(${q.authorStudentId}) | ${q.createdAt?.toDate().toLocaleString() || 'Just now'}</p>
+                        <p class="text-sm text-gray-400">${q.authorName} | ${q.createdAt?.toDate().toLocaleString() || 'Just now'}</p>
                     </div>
                     <div class="flex gap-2">
                         <button id="upvote-q-${id}" onclick="upvote('questions', '${id}', ${hasUpvoted})" class="p-2 rounded-lg ${hasUpvoted ? 'bg-orange-100 text-orange-600' : 'bg-gray-100'} transition">
@@ -410,12 +422,12 @@ async function loadAnswers(questionId) {
         snapshot.forEach(docSnap => {
             const a = docSnap.data();
             const id = docSnap.id;
-            const isOwnerOrAdmin = (a.uid === currentUser.uid || userRole === 'admin');
-            const hasUpvoted = a.upvotedBy?.includes(currentUser.uid);
+            const isOwnerOrAdmin = (a.uid === currentUser?.uid || userRole === 'admin' || currentSection === 5);
+            const hasUpvoted = a.upvotedBy?.includes(currentUser?.uid);
 
             ansDiv.innerHTML += `
                 <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg text-sm">
-                    <div><span class="font-bold">${a.authorName}(${a.authorStudentId})</span>: ${a.content}</div>
+                    <div><span class="font-bold">${a.authorName}</span>: ${a.content}</div>
                     <div class="flex gap-2 items-center">
                         <button id="upvote-a-${id}" onclick="upvote('answers', '${id}', ${hasUpvoted})" class="text-xs ${hasUpvoted ? 'text-orange-600' : 'text-gray-400'}">
                             <i class="fa-solid fa-thumbs-up"></i> <span>${a.upvotesCount}</span>
@@ -439,7 +451,7 @@ window.submitQuestion = async () => {
     const category = document.getElementById('q-category').value;
     const title = document.getElementById('q-title').value;
     const content = document.getElementById('q-content').value;
-    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
+    const lang = (currentSection === 1 || currentSection === 4 || currentSection === 5) ? 'ko' : 'en';
 
     if (!title.trim() || !content.trim()) {
         alert(lang === 'ko' ? '제목과 내용을 모두 입력해주세요.' : 'Please enter both title and content.');
@@ -453,17 +465,24 @@ window.submitQuestion = async () => {
     }
 
     try {
-        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-        const { name, studentId } = userDoc.data();
+        let authorName = "익명";
+        let authorStudentId = "";
+
+        if (currentSection === 5) {
+            authorName = playgroundNickname; // Playground는 입력한 닉네임 사용
+        } else {
+            const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+            const userData = userDoc.data();
+            authorName = `${userData.name}(${userData.studentId})`;
+        }
 
         await addDoc(collection(db, "questions"), {
             section: currentSection,
             category: category,
             title: title,
             content: content,
-            uid: currentUser.uid,
-            authorName: name,
-            authorStudentId: studentId,
+            uid: currentUser ? currentUser.uid : 'anonymous',
+            authorName: authorName,
             upvotesCount: 0,
             upvotedBy: [],
             createdAt: serverTimestamp()
@@ -489,11 +508,17 @@ window.submitAnswer = async (questionId) => {
     const content = document.getElementById(`ans-input-${questionId}`).value;
     if(!content) return;
     try {
-        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-        const { name, studentId } = userDoc.data();
+        let authorName = "익명";
+        if (currentSection === 5) {
+            authorName = playgroundNickname;
+        } else {
+            const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+            const userData = userDoc.data();
+            authorName = `${userData.name}(${userData.studentId})`;
+        }
 
         await addDoc(collection(db, "answers"), {
-            questionId, content, uid: currentUser.uid, authorName: name, authorStudentId: studentId,
+            questionId, content, uid: currentUser ? currentUser.uid : 'anonymous', authorName: authorName,
             upvotesCount: 0, upvotedBy: [], createdAt: serverTimestamp()
         });
         document.getElementById(`ans-input-${questionId}`).value = '';
@@ -504,7 +529,7 @@ window.submitAnswer = async (questionId) => {
 };
 
 window.deleteItem = async (col, id) => {
-    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
+    const lang = (currentSection === 1 || currentSection === 4 || currentSection === 5) ? 'ko' : 'en';
     if(confirm(translations[lang].delete_confirm)) {
         await deleteDoc(doc(db, col, id));
         loadQuestions();
@@ -513,7 +538,7 @@ window.deleteItem = async (col, id) => {
 
 window.showAdminDashboard = async () => {
     showView('view-admin');
-    const lang = (currentSection === 1 || currentSection === 4) ? 'ko' : 'en';
+    const lang = (currentSection === 1 || currentSection === 4 || currentSection === 5) ? 'ko' : 'en';
     const snap = await getDocs(collection(db, "users"));
     const list = document.getElementById('student-list');
     list.innerHTML = `<p class="text-center text-gray-500">${translations[lang].loading_students}</p>`;
@@ -549,20 +574,12 @@ window.upvote = async (col, id, hasUpvoted) => {
         count = Math.max(0, count - 1);
         span.innerText = count;
         btn.setAttribute('onclick', `upvote('${col}', '${id}', false)`);
-        if (col === 'questions') {
-            btn.className = "p-2 rounded-lg bg-gray-100 transition";
-        } else {
-            btn.className = "text-xs text-gray-400";
-        }
+        btn.className = (col === 'questions') ? "p-2 rounded-lg bg-gray-100 transition" : "text-xs text-gray-400";
     } else {
         count = count + 1;
         span.innerText = count;
         btn.setAttribute('onclick', `upvote('${col}', '${id}', true)`);
-        if (col === 'questions') {
-            btn.className = "p-2 rounded-lg bg-orange-100 text-orange-600 transition";
-        } else {
-            btn.className = "text-xs text-orange-600";
-        }
+        btn.className = (col === 'questions') ? "p-2 rounded-lg bg-orange-100 text-orange-600 transition" : "text-xs text-orange-600";
     }
 
     try {
@@ -570,9 +587,10 @@ window.upvote = async (col, id, hasUpvoted) => {
         const snap = await getDoc(ref);
         const data = snap.data();
         const newCount = hasUpvoted ? Math.max(0, (data.upvotesCount || 1) - 1) : (data.upvotesCount || 0) + 1;
+        const uidKey = currentUser ? currentUser.uid : 'anonymous';
         await updateDoc(ref, {
             upvotesCount: newCount,
-            upvotedBy: hasUpvoted ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid)
+            upvotedBy: hasUpvoted ? arrayRemove(uidKey) : arrayUnion(uidKey)
         });
     } catch(e) {
         console.error("Upvote error:", e);
