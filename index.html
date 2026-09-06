@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>분반별 Q&A 플랫폼</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans">
+
+    <!-- 1단계: 분반 선택 화면 -->
+    <div id="view-section" class="min-h-screen flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-white shadow-xl rounded-2xl p-8 text-center">
+            <h1 class="text-2xl font-bold mb-6">분반을 선택하세요</h1>
+            <div class="grid grid-cols-2 gap-4" id="section-btns">
+                <button onclick="selectSection(1)" class="p-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">1분반</button>
+                <button onclick="selectSection(2)" class="p-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">2분반</button>
+                <button onclick="selectSection(3)" class="p-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">3분반</button>
+                <button onclick="selectSection(4)" class="p-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">4분반</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2단계: 공통 비밀번호 입력 -->
+    <div id="view-password" class="hidden min-h-screen flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-white shadow-xl rounded-2xl p-8 text-center">
+            <h1 class="text-2xl font-bold mb-6">접근 비밀번호 입력</h1>
+            <input type="password" id="common-pw" class="w-full p-3 border rounded-lg mb-4 text-center" placeholder="비밀번호를 입력하세요">
+            <button onclick="verifyPassword()" class="w-full p-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">다음 단계</button>
+        </div>
+    </div>
+
+    <!-- 3단계: 회원가입/로그인 -->
+    <div id="view-auth" class="hidden min-h-screen flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-white shadow-xl rounded-2xl p-8">
+            <div id="auth-login">
+                <h1 class="text-2xl font-bold mb-6 text-center">로그인</h1>
+                <input type="email" id="login-email" class="w-full p-3 border rounded-lg mb-3" placeholder="이메일">
+                <input type="password" id="login-pw" class="w-full p-3 border rounded-lg mb-4" placeholder="비밀번호">
+                <button onclick="handleLogin()" class="w-full p-3 bg-indigo-600 text-white rounded-lg mb-3 hover:bg-indigo-700 transition">로그인</button>
+                <p class="text-center text-sm">계정이 없으신가요? <a href="#" onclick="toggleAuth(true)" class="text-indigo-600 underline">회원가입</a></p>
+            </div>
+            <div id="auth-signup" class="hidden">
+                <h1 class="text-2xl font-bold mb-6 text-center">회원가입</h1>
+                <input type="text" id="sign-name" class="w-full p-3 border rounded-lg mb-3" placeholder="이름">
+                <input type="text" id="sign-student-id" class="w-full p-3 border rounded-lg mb-3" placeholder="학번">
+                <input type="email" id="sign-email" class="w-full p-3 border rounded-lg mb-3" placeholder="이메일">
+                <input type="password" id="sign-pw" class="w-full p-3 border rounded-lg mb-4" placeholder="비밀번호">
+                <button onclick="handleSignup()" class="w-full p-3 bg-green-600 text-white rounded-lg mb-3 hover:bg-green-700 transition">가입 완료</button>
+                <p class="text-center text-sm">이미 계정이 있으신가요? <a href="#" onclick="toggleAuth(false)" class="text-indigo-600 underline">로그인</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 메인 화면: Q&A 게시판 -->
+    <div id="view-main" class="hidden min-h-screen p-4 max-w-5xl mx-auto">
+        <header class="flex justify-between items-center mb-8 py-4 border-b">
+            <div>
+                <h1 class="text-3xl font-extrabold text-indigo-700"><span id="display-section"></span>분반 Q&A</h1>
+                <p id="user-info" class="text-gray-500"></p>
+            </div>
+            <div class="flex gap-2">
+                <button id="btn-admin-dash" onclick="showAdminDashboard()" class="hidden p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition">관리자 대시보드</button>
+                <button onclick="handleLogout()" class="p-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition">로그아웃</button>
+            </div>
+        </header>
+
+        <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+            <div class="flex bg-white border rounded-lg p-1 shadow-sm">
+                <button onclick="setSort('createdAt')" id="sort-new" class="px-4 py-2 rounded-md text-sm font-medium bg-indigo-100 text-indigo-700">최신순</button>
+                <button onclick="setSort('upvotesCount')" id="sort-vote" class="px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 transition">추천순</button>
+            </div>
+            <button onclick="openModal('modal-question')" class="px-6 py-3 bg-indigo-600 text-white rounded-xl shadow-lg hover:bg-indigo-700 transition">+ 질문하기</button>
+        </div>
+
+        <div id="question-list" class="space-y-6"></div>
+    </div>
+
+    <!-- 관리자 대시보드 화면 -->
+    <div id="view-admin" class="hidden min-h-screen p-4 max-w-5xl mx-auto">
+        <header class="flex items-center gap-4 mb-8 py-4 border-b">
+            <button onclick="showMain()" class="p-2 text-gray-600 hover:text-black"><i class="fa-solid fa-arrow-left"></i> 돌아가기</button>
+            <h1 class="text-3xl font-extrabold">학생 관리 대시보드</h1>
+        </header>
+        <div class="bg-white shadow rounded-xl overflow-hidden">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-gray-100 border-b">
+                    <tr>
+                        <th class="p-4 font-semibold">이름</th>
+                        <th class="p-4 font-semibold">학번</th>
+                        <th class="p-4 font-semibold">이메일</th>
+                    </tr>
+                </thead>
+                <tbody id="student-list"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 질문 작성 모달 -->
+    <div id="modal-question" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl">
+            <h2 class="text-2xl font-bold mb-6">질문 작성</h2>
+            <select id="q-category" class="w-full p-3 border rounded-lg mb-4">
+                <option value="전체">전체</option>
+                <option value="1주차">1주차</option>
+                <option value="2주차">2주차</option>
+                <option value="3주차">3주차</option>
+            </select>
+            <input type="text" id="q-title" class="w-full p-3 border rounded-lg mb-4" placeholder="제목을 입력하세요">
+            <textarea id="q-content" class="w-full p-3 border rounded-lg mb-6 h-32" placeholder="내용을 입력하세요"></textarea>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeModal('modal-question')" class="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg transition">취소</button>
+                <button onclick="submitQuestion()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">등록하기</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
