@@ -3,11 +3,6 @@ import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, on
 import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, updateDoc, doc, deleteDoc, serverTimestamp, arrayUnion, arrayRemove, getDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 import { firebaseConfig, ADMIN_EMAIL } from './config.js';
 
-// API 키 입력 여부 확인
-if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-    alert("Firebase 설정이 완료되지 않았습니다.\njs/config.js 파일에 API Key를 입력해주세요.");
-}
-
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -16,8 +11,8 @@ let currentSection = null;
 let currentUser = null;
 let userRole = 'student';
 let sortOrder = 'createdAt';
+let isSigningUp = false; // Signup race condition flag
 
-// 다국어 설정
 const translations = {
     ko: {
         select_section: "분반을 선택하세요",
@@ -62,7 +57,6 @@ const translations = {
         submit_ans_btn: "등록",
         delete_confirm: "정말 삭제하시겠습니까?",
         loading_students: "학생 목록을 불러오는 중입니다...",
-        // Category options
         cat_all: "전체",
         cat_w1: "1주차",
         cat_w2: "2주차",
@@ -111,7 +105,6 @@ const translations = {
         submit_ans_btn: "Submit",
         delete_confirm: "Are you sure you want to delete this?",
         loading_students: "Loading student list...",
-        // Category options
         cat_all: "All",
         cat_w1: "Week 1",
         cat_w2: "Week 2",
@@ -122,14 +115,13 @@ const translations = {
 function updateLanguage(lang) {
     document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
-        el.innerText = translations[lang][key];
+        if (translations[lang][key]) el.innerText = translations[lang][key];
     });
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         const key = el.getAttribute('data-i18n-placeholder');
-        el.placeholder = translations[lang][key];
+        if (translations[lang][key]) el.placeholder = translations[lang][key];
     });
 
-    // Category select update
     const catSelect = document.getElementById('q-category');
     if (catSelect) {
         catSelect.innerHTML = '';
@@ -150,7 +142,6 @@ function updateLanguage(lang) {
 
 window.selectSection = (section) => {
     currentSection = section;
-    // 분반에 따른 언어 설정: 1분반만 한국어, 나머지는 영어
     const lang = (section === 1) ? 'ko' : 'en';
     updateLanguage(lang);
     showView('view-password');
@@ -176,7 +167,8 @@ function showView(viewId) {
         const el = document.getElementById(id);
         if(el) el.classList.add('hidden');
     });
-    document.getElementById(viewId).classList.remove('hidden');
+    const target = document.getElementById(viewId);
+    if(target) target.classList.remove('hidden');
 }
 
 window.handleSignup = async () => {
@@ -187,17 +179,23 @@ window.handleSignup = async () => {
 
     if(!name || !studentId || !email || !password) {
         const lang = (currentSection === 1) ? 'ko' : 'en';
-        return alert(translations[lang].no_account); // Temporary placeholder for "fill all fields"
+        return alert(translations[lang].no_account); // Simple validation
     }
 
     try {
+        isSigningUp = true; // Set flag to prevent onAuthStateChanged from alerting too early
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const uid = userCredential.user.uid;
         const role = (email === ADMIN_EMAIL) ? 'admin' : 'student';
         await addDoc(collection(db, "users"), { uid, name, studentId, email, role });
+        
         const lang = (currentSection === 1) ? 'ko' : 'en';
-        alert('회원가입이 완료되었습니다!'); // Simplified for now
-    } catch (e) { alert("가입 실패: " + e.message); }
+        alert('Registration Complete!'); 
+        isSigningUp = false;
+    } catch (e) { 
+        isSigningUp = false;
+        alert("Signup failed: " + e.message); 
+    }
 };
 
 window.handleLogin = async () => {
@@ -205,7 +203,7 @@ window.handleLogin = async () => {
     const password = document.getElementById('login-pw').value;
     try {
         await signInWithEmailAndPassword(auth, email, password);
-    } catch (e) { alert("로그인 실패: " + e.message); }
+    } catch (e) { alert("Login failed: " + e.message); }
 };
 
 window.handleLogout = () => signOut(auth).then(() => location.reload());
@@ -222,14 +220,16 @@ onAuthStateChanged(auth, async (user) => {
         currentUser = user;
         const userDoc = await getDoc(doc(db, "users", user.uid));
         if (!userDoc.exists()) {
-            const lang = (currentSection === 1) ? 'ko' : 'en';
-            alert(translations[lang].user_not_found);
+            if(!isSigningUp) {
+                const lang = (currentSection === 1) ? 'ko' : 'en';
+                alert(translations[lang].user_not_found);
+                await signOut(auth); // Log out if user doc is missing to avoid stuck state
+            }
             return;
         }
         const userData = userDoc.data();
         userRole = userData.role;
         document.getElementById('display-section').innerText = sectionNames[currentSection] || '전체';
-        
         const lang = (currentSection === 1) ? 'ko' : 'en';
         document.getElementById('user-info').innerText = `${userData.name}(${userData.studentId}) ${translations[lang].welcome_msg}`;
         if(userRole === 'admin') document.getElementById('btn-admin-dash').classList.remove('hidden');
@@ -278,7 +278,7 @@ async function loadQuestions() {
                     <div>
                         <span class="text-xs font-bold px-2 py-1 bg-indigo-50 text-indigo-600 rounded">${q.category}</span>
                         <h3 class="text-xl font-bold mt-2">${q.title}</h3>
-                        <p class="text-sm text-gray-400">${q.authorName}(${q.authorStudentId}) | ${q.createdAt?.toDate().toLocaleString() || '방금 전'}</p>
+                        <p class="text-sm text-gray-400">${q.authorName}(${q.authorStudentId}) | ${q.createdAt?.toDate().toLocaleString() || 'Just now'}</p>
                     </div>
                     <div class="flex gap-2">
                         <button onclick="upvote('questions', '${id}', ${hasUpvoted})" class="p-2 rounded-lg ${hasUpvoted ? 'bg-orange-100 text-orange-600' : 'bg-gray-100'} transition">
@@ -300,7 +300,7 @@ async function loadQuestions() {
             loadAnswers(id);
         });
     } catch (e) {
-        qList.innerHTML = `<p class="text-center text-red-500">오류 발생: ${e.message}<br>Firestore 인덱스 설정이 필요할 수 있습니다.</p>`;
+        qList.innerHTML = `<p class="text-center text-red-500">Error: ${e.message}<br>Firestore Index may be required.</p>`;
     }
 }
 
@@ -324,7 +324,7 @@ async function loadAnswers(questionId) {
                     <button onclick="upvote('answers', '${id}', ${hasUpvoted})" class="text-xs ${hasUpvoted ? 'text-orange-600' : 'text-gray-400'}">
                         <i class="fa-solid fa-thumbs-up"></i> ${a.upvotesCount}
                     </button>
-                    ${isOwnerOrAdmin ? `<button onclick="deleteItem('answers', '${id}')" class="text-xs text-gray-300 hover:text-red-도en-500"><i class="fa-solid fa-xmark"></i></button>` : ''}
+                    ${isOwnerOrAdmin ? `<button onclick="deleteItem('answers', '${id}')" class="text-xs text-gray-300 hover:text-red-500"><i class="fa-solid fa-xmark"></i></button>` : ''}
                 </div>
             </div>
         `;
@@ -333,10 +333,7 @@ async function loadAnswers(questionId) {
 
 window.submitAnswer = async (questionId) => {
     const content = document.getElementById(`ans-input-${questionId}`).value;
-    if(!content) {
-        const lang = (currentSection === 1) ? 'ko' : 'en';
-        return alert(translations[lang].ans_placeholder); // Placeholder for "please enter answer"
-    }
+    if(!content) return;
     const userDoc = await getDoc(doc(db, "users", currentUser.uid));
     const { name, studentId } = userDoc.data();
 
@@ -349,7 +346,8 @@ window.submitAnswer = async (questionId) => {
 };
 
 window.deleteItem = async (col, id) => {
-    if(confirm(translations[(currentSection === 1 ? 'ko' : 'en')].delete_confirm)) {
+    const lang = (currentSection === 1) ? 'ko' : 'en';
+    if(confirm(translations[lang].delete_confirm)) {
         await deleteDoc(doc(db, col, id));
         loadQuestions();
     }
@@ -361,10 +359,11 @@ window.showAdminDashboard = async () => {
     const snap = await getDocs(collection(db, "users"));
     const list = document.getElementById('student-list');
     list.innerHTML = `<p class="text-center text-gray-500">${translations[lang].loading_students}</p>`;
+    list.innerHTML = '';
     snap.forEach(docSnap => {
         const u = docSnap.data();
         if(u.role === 'student') {
-            list.innerHTML += `<tr class="border-bg-gray-50 border-b hover:bg-gray-50"><td class="p-4">${u.name}</td><td class="p-4">${u.studentId}</td><td class="p-4">${u.email}</td></tr>`;
+            list.innerHTML += `<tr class="border-b hover:bg-gray-50"><td class="p-4">${u.name}</td><td class="p-4">${u.studentId}</td><td class="p-4">${u.email}</td></tr>`;
         }
     });
 };
@@ -373,7 +372,6 @@ window.showMain = () => showView('view-main');
 window.openModal = (id) => {
     const lang = (currentSection === 1) ? 'ko' : 'en';
     document.getElementById(id).classList.remove('hidden');
-    // Modal open 시 카테고리 옵션 최신화 (언어 반영)
     if(id === 'modal-question') {
         const catSelect = document.getElementById('q-category');
         catSelect.innerHTML = '';
@@ -392,6 +390,28 @@ window.openModal = (id) => {
     }
 };
 
-window.closeModal = (id) => document.getElementById(id).classList.remove('hidden'); // Bug fix: .add('hidden') should be used
-window.closeModal = (id) => document.getElementById(id).classList.add('hidden'); 
+window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
 
+// Global upvote function for accessibility
+window.upvote = async (col, id, hasUpvoted) => {
+    const ref = doc(db, col, id);
+    await updateDoc(ref, {
+        upvotesCount: hasUpvoted ? 0 : 1, // This is a simplified logic for demo; should use increment
+        upvotedBy: hasUpvoted ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid)
+    });
+    // Re-fetch to update count correctly if using complex increments, but here we just reload
+    col === 'questions' ? loadQuestions() : loadAnswers(id.split('-')[0]); 
+};
+
+// Fix upvote logic specifically for the current simplified structure
+async function handleUpvote(col, id, hasUpvoted) {
+    const ref = doc(db, col, id);
+    const snap = await getDoc(ref);
+    const data = snap.data();
+    const newCount = hasUpvoted ? (data.upvotesCount || 1) - 1 : (data.upvotesCount || 0) + 1;
+    await updateDoc(ref, {
+        upvotesCount: Math.max(0, newCount),
+        upvotedBy: hasUpvoted ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid)
+    });
+}
+window.upvote = handleUpvote;

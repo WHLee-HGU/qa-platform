@@ -13,7 +13,7 @@
     <div id="view-section" class="min-h-screen flex items-center justify-center p-4">
         <div class="max-w-md w-full bg-white shadow-xl rounded-2xl p-8 text-center">
             <h1 data-i18n="select_section" class="text-2xl font-bold mb-6">분반을 선택하세요</h1>
-            <div class="grid grid-cols-2 gap-4" id="section-btns">
+            <div class="grid grid-cols-1 gap-4" id="section-btns">
                 <button onclick="selectSection(1)" class="p-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">지능로봇제어</button>
                 <button onclick="selectSection(2)" class="p-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">Discrete mathematics</button>
                 <button onclick="selectSection(3)" class="p-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">Computer Architecture and Organization 01</button>
@@ -101,9 +101,7 @@
     <div id="modal-question" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
         <div class="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl">
             <h2 data-i18n="modal_title" class="text-2xl font-bold mb-6">질문 작성</h2>
-            <select id="q-category" class="w-full p-3 border rounded-lg mb-4">
-                <!-- Options will be handled by JS -->
-            </select>
+            <select id="q-category" class="w-full p-3 border rounded-lg mb-4"></select>
             <input type="text" id="q-title" class="w-full p-3 border rounded-lg mb-4" data-i18n-placeholder="q_title_ph" placeholder="제목을 입력하세요">
             <textarea id="q-content" class="w-full p-3 border rounded-lg mb-6 h-32" data-i18n-placeholder="q_content_ph" placeholder="내용을 입력하세요"></textarea>
             <div class="flex justify-end gap-3">
